@@ -100,6 +100,7 @@ class ConversationRecorder:
         """
         Merge user audio and assistant responses into single conversation file.
         Creates a timeline where user speaks, then assistant responds, alternating.
+        Automatically cleans up intermediate files after merging.
         """
         print("🎬 Merging conversation audio...")
         
@@ -134,11 +135,37 @@ class ConversationRecorder:
             )
             
             print(f"✅ Full conversation saved: {self.conversation_path}")
+            
+            # Clean up intermediate files
+            self._cleanup_intermediate_files()
+            
             return self.conversation_path
             
         except Exception as e:
             print(f"❌ Error merging conversation: {e}")
             return None
+    
+    def _cleanup_intermediate_files(self):
+        """
+        Delete intermediate files (user_input.wav and assistant MP3s).
+        Keeps only the final merged conversation.
+        """
+        try:
+            # Delete user audio file
+            if os.path.exists(self.user_audio_path):
+                os.remove(self.user_audio_path)
+                print(f"🗑️  Removed: {os.path.basename(self.user_audio_path)}")
+            
+            # Delete all assistant response files
+            for response_path in self.assistant_responses:
+                if os.path.exists(response_path):
+                    os.remove(response_path)
+                    print(f"🗑️  Removed: {os.path.basename(response_path)}")
+            
+            print("✅ Intermediate audio files cleaned up")
+            
+        except Exception as e:
+            print(f"⚠️  Error cleaning up intermediate files: {e}")
     
     def get_recording_stats(self):
         """Get statistics about recorded audio."""
@@ -157,24 +184,6 @@ class ConversationRecorder:
             stats["conversation_size_mb"] = os.path.getsize(self.conversation_path) / (1024 * 1024)
         
         return stats
-    
-    def cleanup_temp_files(self, keep_conversation: bool = True):
-        """
-        Clean up temporary audio files.
-        
-        Args:
-            keep_conversation: If True, keeps the merged conversation file
-        """
-        # Always keep user audio and conversation
-        # Only clean up individual assistant responses
-        for response_path in self.assistant_responses:
-            try:
-                if os.path.exists(response_path):
-                    os.remove(response_path)
-            except Exception as e:
-                print(f"⚠️  Could not delete {response_path}: {e}")
-        
-        print("🗑️  Temporary audio files cleaned up")
 
 
 # Integration helper functions

@@ -97,6 +97,32 @@ class LLMAgent:
                 self.logger.log_conversation_turn(user_text, error_response)
             return error_response
     
+    def is_call_complete(self) -> bool:
+        """
+        Check if the call should be ended based on assistant's last response.
+        Returns True if closing phrases are detected.
+        """
+        if not self.conversation_history:
+            return False
+        
+        # Get last assistant message
+        last_messages = [msg for msg in self.conversation_history if msg["role"] == "assistant"]
+        if not last_messages:
+            return False
+        
+        last_response = last_messages[-1]["content"].lower()
+        
+        # Closing phrases that indicate call completion
+        closing_phrases = [
+            "have a great day",
+            "thank you for your time",
+            "our sales person will contact you soon",
+            "you can contact droptruck anytime"
+        ]
+        
+        # Check if any closing phrase is in the last response
+        return any(phrase in last_response for phrase in closing_phrases)
+    
     def _call_openai(self, messages: list) -> str:
         """
         Call OpenAI API with conversation messages.

@@ -1,6 +1,6 @@
 """
-Text-to-Speech module using Deepgram's TTS API.
-Handles speech synthesis and audio playback.
+Text-to-Speech module using Deepgram.
+Converts assistant responses to natural-sounding speech.
 """
 
 import os
@@ -12,13 +12,15 @@ from deepgram import DeepgramClient
 class TextToSpeech:
     """Manages text-to-speech synthesis using Deepgram."""
     
-    def __init__(self, api_key: str = None, model: str = "aura-asteria-en"):
+    def __init__(self, api_key: str = None, output_dir: str = "audio_output", model: str = "aura-asteria-en", save_individual_files: bool = False):
         """
         Initialize TTS with Deepgram API key.
         
         Args:
             api_key: Deepgram API key (reads from env if not provided)
+            output_dir: Directory to save audio files
             model: Deepgram TTS model to use
+            save_individual_files: Whether to save individual audio files (default: False, stores in memory)
         """
         self.api_key = api_key or os.getenv("DEEPGRAM_API_KEY")
         if not self.api_key:
@@ -28,11 +30,14 @@ class TextToSpeech:
         
         self.client = DeepgramClient(api_key=self.api_key)
         self.model = model
-        self.output_dir = "audio_output"
-        
-        # Create output directory if it doesn't exist
-        os.makedirs(self.output_dir, exist_ok=True)
-    
+        self.output_dir = output_dir
+        self.save_individual_files = save_individual_files
+        self.audio_responses = []  # Store audio data in memory
+
+        # Create output directory if needed
+        if save_individual_files:
+            os.makedirs(self.output_dir, exist_ok=True)
+
     def synthesize(self, text: str, play: bool = True) -> str:
         """
         Synthesize text to speech and optionally play it.
@@ -42,16 +47,11 @@ class TextToSpeech:
             play: Whether to play the audio after synthesis
             
         Returns:
-            Path to the generated audio file
+            Path to the generated audio file (if saved), or empty string if stored in memory
         """
         if not text or not text.strip():
             print("⚠️  No text to synthesize")
             return ""
-        
-        # Generate unique filename
-        timestamp = int(time.time() * 1000)
-        filename = f"assistant_reply_{timestamp}.mp3"
-        filepath = os.path.join(self.output_dir, filename)
         
         try:
             print("🔊 Synthesizing speech...")
@@ -62,19 +62,48 @@ class TextToSpeech:
                 model=self.model,
             )
             
-            # Write audio to file
-            with open(filepath, "wb") as f:
-                for chunk in speak_stream:
-                    f.write(chunk)
-            
-            print(f"✅ Audio saved to: {filepath}")
-            
-            # Play audio if requested
-            if play:
-                self._play_audio(filepath)
-            
-            return filepath
-            
+            # Collect audio data
+            audio_data = b""
+            for chunk in speak_stream:
+                audio_data += chunk
+
+            if self.save_individual_files:
+                # Save to file
+                timestamp = int(time.time() * 1000)
+                filename = f"assistant_reply_{timestamp}.mp3"
+                filepath = os.path.join(self.output_dir, filename)
+
+                with open(filepath, "wb") as f:
+                    f.write(audio_data)
+
+                print(f"✅ Audio saved to: {filepath}")
+
+                # Play audio if requested
+                if play:
+                    self._play_audio(filepath)
+
+                return filepath
+            else:
+                # Store in memory
+                self.audio_responses.append(audio_data)
+                print(f"✅ Audio synthesized (stored in memory)")
+
+                # Play from memory if requested
+                if play:
+                    # Save to temporary file for playback
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(mode='wb', suffix='.mp3', delete=False) as tmp_file:
+                        tmp_file.write(audio_data)
+                        tmp_path = tmp_file.name
+                    self._play_audio(tmp_path)
+                    # Clean up temp file after playback
+                    try:
+                        os.remove(tmp_path)
+                    except:
+                        pass
+
+                return ""
+
         except Exception as e:
             print(f"❌ TTS synthesis failed: {e}")
             import traceback
@@ -117,6 +146,68 @@ class TextToSpeech:
         except Exception as e:
             print(f"❌ Audio playback failed: {e}")
     
+    def save_conversation_audio(self, output_path: str = None) -> str:
+        """
+        Save all audio responses to a single merged audio file.
+
+        Args:
+            output_path: Path to save the merged audio (optional)
+
+        Returns:
+            Path to the saved audio file
+        """
+        if not self.audio_responses:
+            print("⚠️  No audio responses to save")
+            return ""
+
+        try:
+            from pydub import AudioSegment
+
+            # If no output path specified, create one in the output directory
+            if not output_path:
+                os.makedirs(self.output_dir, exist_ok=True)
+                timestamp = int(time.time() * 1000)
+                output_path = os.path.join(self.output_dir, f"conversation_{timestamp}.mp3")
+
+            print(f"💾 Saving conversation audio ({len(self.audio_responses)} responses)...")
+
+            # Merge all audio responses with silence between them
+            conversation = AudioSegment.silent(duration=500)  # Start with 500ms silence
+
+            for i, audio_data in enumerate(self.audio_responses):
+                # Save audio data to temporary file to load with pydub
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='wb', suffix='.mp3', delete=False) as tmp_file:
+                    tmp_file.write(audio_data)
+                    tmp_path = tmp_file.name
+
+                # Load and add to conversation
+                audio_segment = AudioSegment.from_mp3(tmp_path)
+                if i > 0:
+                    conversation += AudioSegment.silent(duration=300)  # 300ms pause between responses
+                conversation += audio_segment
+
+                # Clean up temp file
+                try:
+                    os.remove(tmp_path)
+                except:
+                    pass
+
+            # Add final silence
+            conversation += AudioSegment.silent(duration=500)
+
+            # Export the merged audio
+            conversation.export(output_path, format="mp3")
+
+            print(f"✅ Conversation audio saved to: {output_path}")
+            return output_path
+
+        except Exception as e:
+            print(f"❌ Failed to save conversation audio: {e}")
+            import traceback
+            traceback.print_exc()
+            return ""
+
     def cleanup_old_files(self, max_age_seconds: int = 3600):
         """
         Remove old audio files from output directory.

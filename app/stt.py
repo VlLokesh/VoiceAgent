@@ -18,9 +18,6 @@ class SpeechToText:
         
         self.client = DeepgramClient(api_key=self.api_key)
         self.connection = None
-        self.conn_cm = None
-        self.used_params = None
-        self.listener_thread = None
         
         # Callback handlers
         self.on_transcript_callback = None
@@ -28,32 +25,22 @@ class SpeechToText:
         self.on_error_callback = None
     
     def _attempt_connection(self):
-        """Try several parameter combinations to find one accepted by Deepgram."""
-        attempts =[
-        {"model": "nova-2-multilingual", "encoding": "pcm_s16le", "sample_rate": 16000, "vad_events": True, "punctuate": True},
-        {"model": "nova-2-multilingual", "encoding": "pcm_s16le", "sample_rate": 16000, "vad_events": True},
-        {"model": "nova-2-multilingual", "encoding": "pcm_s16le", "sample_rate": 16000},
-        {"model": "nova-2", "encoding": "pcm_s16le", "sample_rate": 16000},
-        {"model": "nova-2", "encoding": "linear16", "sample_rate": 16000},
-        {"model": "nova-3", "encoding": "pcm_s16le", "sample_rate": 16000},
-    ]
+        """Connect to Deepgram with working parameters."""
+        params = {
+            "model": "nova-2",
+            "encoding": "linear16",
+            "sample_rate": 16000
+        }
         
-        last_error = None
-        for idx, params in enumerate(attempts, 1):
-            print(f"[STT Connect Attempt {idx}/{len(attempts)}] Params: {params}")
-            try:
-                conn = self.client.listen.v1.connect(**params)
-                connection = conn.__enter__()
-                print(f"✅ STT Connected with params: {params}")
-                return conn, connection, params
-            except Exception as e:
-                print(f"❌ Failed params {params}: {repr(e)}")
-                last_error = e
-                continue
-        
-        raise RuntimeError(
-            f"All STT connection attempts failed. Last error: {repr(last_error)}"
-        )
+        print(f"[STT] Connecting with params: {params}")
+        try:
+            conn = self.client.listen.v1.connect(**params)
+            connection = conn.__enter__()
+            print(f"✅ STT Connected with params: {params}")
+            return conn, connection, params
+        except Exception as e:
+            print(f"❌ Failed to connect to Deepgram: {repr(e)}")
+            raise RuntimeError(f"STT connection failed: {repr(e)}")
     
     def _on_open(self, event):
         """Handle connection open event."""

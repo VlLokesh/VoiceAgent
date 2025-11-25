@@ -14,6 +14,7 @@ from app.tts import TextToSpeech
 from app.llm import LLMAgent
 from prompt import BookingData
 from logs.logger import WorkflowLogger
+from audio_recorder import ConversationRecorder
 
 
 class VoiceAgent:
@@ -39,12 +40,19 @@ class VoiceAgent:
         self.logger = WorkflowLogger()
         self.logger.log_info("Voice Agent initialization started")
 
+        # Initialize audio recorder
+        self.audio_recorder = ConversationRecorder(self.logger.session_id)
+        self.audio_recorder.start_recording()
+        self.logger.log_info(f"Audio recording started: session_{self.logger.session_id}")
+
         # Initialize STT, TTS, and LLM with logger
         self.logger.log_info("Initializing Speech-to-Text component")
         self.stt = SpeechToText()
 
         self.logger.log_info("Initializing Text-to-Speech component")
-        self.tts = TextToSpeech()
+        # Pass session directory to TTS for saving audio files
+        session_audio_dir = f"audio_output/session_{self.logger.session_id}"
+        self.tts = TextToSpeech(output_dir=session_audio_dir, save_individual_files=False)
 
         self.logger.log_info("Initializing LLM Agent component")
         self.llm = LLMAgent(logger=self.logger)
@@ -53,9 +61,11 @@ class VoiceAgent:
         self.current_transcript = []
         self.segment_ready = False
         self.audio_stream = None
+        self.call_complete = False  # Flag to trigger shutdown
         
         self.logger.log_info("Voice Agent initialization complete")
         print("✅ DropTruck AI Sales Agent initialized")
+        print(f"📼 Recording conversation to: audio_output/session_{self.logger.session_id}/")
     
     def on_transcript(self, text: str):
         """Handle partial transcript from STT."""
@@ -92,12 +102,18 @@ class VoiceAgent:
         # Synthesize and play response
         audio_path = self.tts.synthesize(assistant_response, play=True)
         
+        # If audio was saved to file, record it for conversation merge
         if audio_path:
-            self.logger.log_info("TTS synthesis and playback successful")
-            print("🎵 Response complete\n")
-        else:
-            self.logger.log_warning("TTS synthesis failed")
-            print("⚠️  TTS failed, continuing...\n")
+            self.audio_recorder.add_assistant_response(audio_path)
+
+        self.logger.log_info("TTS synthesis and playback successful")
+        print("🎵 Response complete\n")
+
+        # Check if call should be completed
+        if self.llm.is_call_complete():
+            print("\n✅ Call completed - closing conversation")
+            self.logger.log_info("Call auto-completed based on closing phrase")
+            self.call_complete = True
     
     def run(self):
         """Run the main conversation loop."""
@@ -118,13 +134,33 @@ class VoiceAgent:
             
             self.logger.log_info("Voice Agent ready - Conversation loop started")
 
+            # Custom audio callback that records AND sends to STT
+            def audio_callback(indata, frames, time_info, status):
+                if status:
+                    print("Audio status:", status)
+                
+                # Record user audio for conversation merge
+                self.audio_recorder.add_audio_chunk(indata.tobytes())
+                
+                # Send to STT
+                try:
+                    if self.stt.connection:
+                        self.stt.connection.send_media(indata.tobytes())
+                except Exception as e:
+                    print("Failed sending audio:", e)
+
             with sd.InputStream(
-                callback=self.stt.get_audio_callback(),
+                callback=audio_callback,  # Use our custom callback
                 channels=1,
                 samplerate=16000,
                 dtype='int16'
             ):
                 while True:
+                    # Check if call is complete
+                    if self.call_complete:
+                        print("\n📞 Call ending gracefully...")
+                        break
+                    
                     # Check if we have a complete segment to process
                     if self.segment_ready:
                         self.segment_ready = False
@@ -161,6 +197,9 @@ class VoiceAgent:
         # Stop STT
         self.stt.stop()
         
+        # Stop audio recording
+        self.audio_recorder.stop_recording()
+        
         # Print collected booking information
         self.print_booking_summary()
         
@@ -168,11 +207,41 @@ class VoiceAgent:
         booking_data = self.llm.get_booking_data()
         self.logger.log_session_end(booking_data.to_dict())
         
+        # Save conversation audio (TTS responses only if no individual files were saved)
+        session_audio_dir = f"audio_output/session_{self.logger.session_id}"
+        os.makedirs(session_audio_dir, exist_ok=True)
+
+        conversation_audio_path = self.tts.save_conversation_audio(
+            output_path=os.path.join(session_audio_dir, "conversation.mp3")
+        )
+
+        if conversation_audio_path:
+            print(f"✅ Conversation audio saved: {conversation_audio_path}")
+            self.logger.log_info(f"Conversation audio: {conversation_audio_path}")
+
+        # Also merge with user audio if ConversationRecorder has files
+        if self.audio_recorder.assistant_responses:
+            print("\n🎬 Creating full conversation audio with user input...")
+            full_conversation_path = self.audio_recorder.merge_conversation()
+
+            if full_conversation_path:
+                print(f"✅ Full conversation audio saved: {full_conversation_path}")
+                self.logger.log_info(f"Full conversation audio: {full_conversation_path}")
+
+        # Get recording stats
+        stats = self.audio_recorder.get_recording_stats()
+        if stats.get('user_audio_exists'):
+            print(f"\n📊 Audio Recording Stats:")
+            print(f"   User audio: {stats.get('user_audio_size_mb', 0):.2f} MB")
+            print(f"   Assistant responses: {stats['assistant_responses']}")
+            if stats.get('conversation_exists'):
+                print(f"   Full conversation: {stats.get('conversation_size_mb', 0):.2f} MB")
+        
         # Cleanup old audio files
         self.tts.cleanup_old_files()
         
         self.logger.log_info("Shutdown complete")
-        print("✅ Shutdown complete")
+        print("\n✅ Shutdown complete")
         print(f"\n📄 Logs saved to:")
         print(f"   Session (text): {self.logger.get_log_path()}")
         print(f"   Session (JSON): {self.logger.get_json_log_path()}")
