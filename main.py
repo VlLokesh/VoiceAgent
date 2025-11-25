@@ -37,10 +37,16 @@ class VoiceAgent:
         
         # Initialize logger
         self.logger = WorkflowLogger()
-        
+        self.logger.log_info("Voice Agent initialization started")
+
         # Initialize STT, TTS, and LLM with logger
+        self.logger.log_info("Initializing Speech-to-Text component")
         self.stt = SpeechToText()
+
+        self.logger.log_info("Initializing Text-to-Speech component")
         self.tts = TextToSpeech()
+
+        self.logger.log_info("Initializing LLM Agent component")
         self.llm = LLMAgent(logger=self.logger)
         
         # Conversation state
@@ -48,6 +54,7 @@ class VoiceAgent:
         self.segment_ready = False
         self.audio_stream = None
         
+        self.logger.log_info("Voice Agent initialization complete")
         print("✅ DropTruck AI Sales Agent initialized")
     
     def on_transcript(self, text: str):
@@ -61,8 +68,10 @@ class VoiceAgent:
     
     def on_error(self, error):
         """Handle STT errors."""
-        print(f"⚠️  STT Error: {error}")
-    
+        error_msg = f"STT Error: {error}"
+        print(f"⚠️  {error_msg}")
+        self.logger.log_error(error_msg)
+
     def process_user_input(self, user_text: str):
         """
         Process user input through LLM and generate TTS response.
@@ -74,7 +83,8 @@ class VoiceAgent:
             return
         
         print(f"\n📝 User (final): {user_text}")
-        
+        self.logger.log_info(f"Processing user input: {user_text[:50]}...")
+
         # Generate LLM response
         assistant_response = self.llm.generate_response(user_text)
         print(f"💬 Assistant: {assistant_response}")
@@ -83,14 +93,17 @@ class VoiceAgent:
         audio_path = self.tts.synthesize(assistant_response, play=True)
         
         if audio_path:
+            self.logger.log_info("TTS synthesis and playback successful")
             print("🎵 Response complete\n")
         else:
+            self.logger.log_warning("TTS synthesis failed")
             print("⚠️  TTS failed, continuing...\n")
     
     def run(self):
         """Run the main conversation loop."""
         try:
             # Start STT
+            self.logger.log_info("Starting Speech-to-Text stream")
             self.stt.start(
                 on_transcript=self.on_transcript,
                 on_final=self.on_final,
@@ -103,6 +116,8 @@ class VoiceAgent:
             print("Press ENTER or Ctrl+C to end the call")
             print("="*60 + "\n")
             
+            self.logger.log_info("Voice Agent ready - Conversation loop started")
+
             with sd.InputStream(
                 callback=self.stt.get_audio_callback(),
                 channels=1,
@@ -126,9 +141,12 @@ class VoiceAgent:
         
         except KeyboardInterrupt:
             print("\n\n⏹️  Call ended by user (Ctrl+C)")
-        
+            self.logger.log_info("Call ended by user (KeyboardInterrupt)")
+
         except Exception as e:
-            print(f"\n❌ Runtime error: {e}")
+            error_msg = f"Runtime error: {e}"
+            print(f"\n❌ {error_msg}")
+            self.logger.log_error(error_msg)
             import traceback
             traceback.print_exc()
         
@@ -138,7 +156,8 @@ class VoiceAgent:
     def shutdown(self):
         """Clean shutdown of all components."""
         print("\n🛑 Shutting down...")
-        
+        self.logger.log_info("Shutdown initiated")
+
         # Stop STT
         self.stt.stop()
         
@@ -152,11 +171,19 @@ class VoiceAgent:
         # Cleanup old audio files
         self.tts.cleanup_old_files()
         
+        self.logger.log_info("Shutdown complete")
         print("✅ Shutdown complete")
         print(f"\n📄 Logs saved to:")
-        print(f"   Text: {self.logger.get_log_path()}")
-        print(f"   JSON: {self.logger.get_json_log_path()}")
-    
+        print(f"   Session (text): {self.logger.get_log_path()}")
+        print(f"   Session (JSON): {self.logger.get_json_log_path()}")
+        print(f"\n📝 Unified logs:")
+        print(f"   Runtime log: {self.logger.get_runtime_log_path()}")
+        print(f"   Sessions log: {self.logger.get_sessions_log_path()}")
+        print(f"\n💡 To tail runtime logs, run:")
+        print(f"   tail -f {self.logger.get_runtime_log_path()}")
+        print(f"\n💡 To tail sessions logs, run:")
+        print(f"   tail -f {self.logger.get_sessions_log_path()}")
+
     def print_booking_summary(self):
         """Print the collected booking information after call ends."""
         booking_data = self.llm.get_booking_data()
