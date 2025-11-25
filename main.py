@@ -13,6 +13,7 @@ from app.stt import SpeechToText
 from app.tts import TextToSpeech
 from app.llm import LLMAgent
 from prompt import BookingData
+from logs.logger import WorkflowLogger
 
 
 class VoiceAgent:
@@ -32,17 +33,22 @@ class VoiceAgent:
             )
         
         # Initialize components
-        print("🚀 Initializing Voice Agent...")
+        print("🚀 Initializing DropTruck AI Sales Agent...")
+        
+        # Initialize logger
+        self.logger = WorkflowLogger()
+        
+        # Initialize STT, TTS, and LLM with logger
         self.stt = SpeechToText()
         self.tts = TextToSpeech()
-        self.llm = LLMAgent()
+        self.llm = LLMAgent(logger=self.logger)
         
         # Conversation state
         self.current_transcript = []
         self.segment_ready = False
         self.audio_stream = None
         
-        print("✅ Voice Agent initialized")
+        print("✅ DropTruck AI Sales Agent initialized")
     
     def on_transcript(self, text: str):
         """Handle partial transcript from STT."""
@@ -93,7 +99,7 @@ class VoiceAgent:
             
             # Start audio stream
             print("\n" + "="*60)
-            print("🎤 VOICE AGENT READY - Speak now!")
+            print("🎤 DROPTRUCK AI SALES AGENT READY")
             print("Press ENTER or Ctrl+C to end the call")
             print("="*60 + "\n")
             
@@ -139,10 +145,17 @@ class VoiceAgent:
         # Print collected booking information
         self.print_booking_summary()
         
+        # Save session logs
+        booking_data = self.llm.get_booking_data()
+        self.logger.log_session_end(booking_data.to_dict())
+        
         # Cleanup old audio files
         self.tts.cleanup_old_files()
         
         print("✅ Shutdown complete")
+        print(f"\n📄 Logs saved to:")
+        print(f"   Text: {self.logger.get_log_path()}")
+        print(f"   JSON: {self.logger.get_json_log_path()}")
     
     def print_booking_summary(self):
         """Print the collected booking information after call ends."""

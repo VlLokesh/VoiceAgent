@@ -13,16 +13,18 @@ from prompt import SYSTEM_PROMPT, BookingData
 class LLMAgent:
     """Manages LLM interactions and conversation state."""
     
-    def __init__(self, api_key: str = None, model: str = None):
+    def __init__(self, api_key: str = None, model: str = None, logger=None):
         """
         Initialize LLM agent.
         
         Args:
             api_key: OpenAI API key (reads from env if not provided)
             model: OpenAI model to use (default: gpt-4o-mini)
+            logger: WorkflowLogger instance for logging conversations
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        self.logger = logger
         
         if not self.api_key:
             print("⚠️  WARNING: OPENAI_API_KEY not set. Agent will use echo mode.")
@@ -53,9 +55,15 @@ class LLMAgent:
         # Extract booking information from user text
         self._extract_booking_info(user_text)
         
+        # Detect confirmation status
+        self._detect_confirmation(user_text)
+        
         # If no API key, use echo mode
         if not self.api_key:
-            return f"[Echo Mode] You said: {user_text}"
+            response = f"[Echo Mode] You said: {user_text}"
+            if self.logger:
+                self.logger.log_conversation_turn(user_text, response)
+            return response
         
         # Add user message to history
         self.conversation_history.append({
@@ -76,11 +84,18 @@ class LLMAgent:
                 "content": response_text
             })
             
+            # Log conversation turn
+            if self.logger:
+                self.logger.log_conversation_turn(user_text, response_text)
+            
             return response_text
             
         except Exception as e:
             print(f"❌ LLM error: {e}")
-            return "I'm having trouble processing that right now. Could you try again?"
+            error_response = "I'm having trouble processing that right now. Could you try again?"
+            if self.logger:
+                self.logger.log_conversation_turn(user_text, error_response)
+            return error_response
     
     def _call_openai(self, messages: list) -> str:
         """
@@ -148,15 +163,45 @@ class LLMAgent:
         # Detect body type
         if "open" in text_lower and self.booking_data.body_type is None:
             self.booking_data.body_type = "Open"
+            if self.logger:
+                self.logger.log_booking_update("body_type", "Open")
         elif "container" in text_lower and self.booking_data.body_type is None:
             self.booking_data.body_type = "Container"
+            if self.logger:
+                self.logger.log_booking_update("body_type", "Container")
         
         # Detect vehicle type mentions
         if "truck" in text_lower and self.booking_data.vehicle_type is None:
             self.booking_data.vehicle_type = "Truck"
+            if self.logger:
+                self.logger.log_booking_update("vehicle_type", "Truck")
         
         # Note: More sophisticated extraction would use NER or LLM-based extraction
         # For now, we rely on the LLM to guide the conversation and ask for clarifications
+    
+    def _detect_confirmation(self, text: str):
+        """
+        Detect confirmation or rejection keywords in user text.
+        
+        Args:
+            text: User's spoken text
+        """
+        text_lower = text.lower()
+        
+        # Detect confirmation
+        confirmation_keywords = ["yes", "correct", "right", "that's right", "confirmed", "okay", "ok"]
+        if any(keyword in text_lower for keyword in confirmation_keywords):
+            if self.booking_data.is_complete() and self.booking_data.confirmation_status == "pending":
+                self.booking_data.confirmation_status = "confirmed"
+                if self.logger:
+                    self.logger.log_confirmation_status("confirmed")
+        
+        # Detect not interested
+        rejection_keywords = ["not interested", "no thanks", "don't need", "cancel"]
+        if any(keyword in text_lower for keyword in rejection_keywords):
+            self.booking_data.confirmation_status = "not_interested"
+            if self.logger:
+                self.logger.log_confirmation_status("not_interested")
     
     def get_booking_data(self) -> BookingData:
         """
