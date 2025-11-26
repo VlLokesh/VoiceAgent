@@ -1,3 +1,3 @@
 .env
-audio_output
-logs
+storage/audio_output
+storage/logs

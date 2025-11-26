@@ -12,9 +12,9 @@ from dotenv import load_dotenv
 from app.stt import SpeechToText
 from app.tts import TextToSpeech
 from app.llm import LLMAgent
-from prompt import BookingData
-from logs.logger import WorkflowLogger
-from audio_recorder import ConversationRecorder
+from core.logger import WorkflowLogger
+from core.audio_recorder import ConversationRecorder
+from core.api_client import DropTruckAPIClient
 
 
 class VoiceAgent:
@@ -36,8 +36,8 @@ class VoiceAgent:
         # Initialize components
         print("🚀 Initializing DropTruck AI Sales Agent...")
         
-        # Initialize logger
-        self.logger = WorkflowLogger()
+        # Initialize logger with storage/logs directory
+        self.logger = WorkflowLogger(logs_dir="storage/logs")
         self.logger.log_info("Voice Agent initialization started")
 
         # Initialize audio recorder
@@ -51,8 +51,8 @@ class VoiceAgent:
 
         self.logger.log_info("Initializing Text-to-Speech component")
         # Pass session directory to TTS for saving audio files
-        session_audio_dir = f"audio_output/session_{self.logger.session_id}"
-        self.tts = TextToSpeech(output_dir=session_audio_dir, save_individual_files=False)
+        session_audio_dir = f"storage/audio_output/session_{self.logger.session_id}"
+        self.tts = TextToSpeech(output_dir=session_audio_dir)
 
         self.logger.log_info("Initializing LLM Agent component")
         self.llm = LLMAgent(logger=self.logger)
@@ -200,6 +200,10 @@ class VoiceAgent:
         # Stop audio recording
         self.audio_recorder.stop_recording()
         
+        # Small delay to ensure TTS playback completes and files are written
+        print("⏳ Waiting for audio processing to complete...")
+        time.sleep(2)
+        
         # Print collected booking information
         self.print_booking_summary()
         
@@ -207,38 +211,36 @@ class VoiceAgent:
         booking_data = self.llm.get_booking_data()
         self.logger.log_session_end(booking_data.to_dict())
         
-        # Save conversation audio (TTS responses only if no individual files were saved)
-        session_audio_dir = f"audio_output/session_{self.logger.session_id}"
-        os.makedirs(session_audio_dir, exist_ok=True)
-
-        conversation_audio_path = self.tts.save_conversation_audio(
-            output_path=os.path.join(session_audio_dir, "conversation.mp3")
-        )
-
-        if conversation_audio_path:
-            print(f"✅ Conversation audio saved: {conversation_audio_path}")
-            self.logger.log_info(f"Conversation audio: {conversation_audio_path}")
-
-        # Also merge with user audio if ConversationRecorder has files
-        if self.audio_recorder.assistant_responses:
-            print("\n🎬 Creating full conversation audio with user input...")
-            full_conversation_path = self.audio_recorder.merge_conversation()
-
-            if full_conversation_path:
-                print(f"✅ Full conversation audio saved: {full_conversation_path}")
-                self.logger.log_info(f"Full conversation audio: {full_conversation_path}")
-
+        # Merge conversation audio into single file
+        print("\n🎬 Creating full conversation audio...")
+        conversation_path = self.audio_recorder.merge_conversation()
+        
+        if conversation_path:
+            print(f"✅ Full conversation audio saved: {conversation_path}")
+            self.logger.log_info(f"Full conversation audio: {conversation_path}")
+        
         # Get recording stats
         stats = self.audio_recorder.get_recording_stats()
-        if stats.get('user_audio_exists'):
+        if stats.get('conversation_exists'):
             print(f"\n📊 Audio Recording Stats:")
-            print(f"   User audio: {stats.get('user_audio_size_mb', 0):.2f} MB")
-            print(f"   Assistant responses: {stats['assistant_responses']}")
-            if stats.get('conversation_exists'):
+            print(f"   Assistant responses recorded: {stats['assistant_responses']}")
+            if stats.get('conversation_size_mb'):
                 print(f"   Full conversation: {stats.get('conversation_size_mb', 0):.2f} MB")
         
-        # Cleanup old audio files
+        # Cleanup old audio files (files older than 1 hour in base audio_output dir)
         self.tts.cleanup_old_files()
+        
+        # Send booking data to API if confirmed
+        if self.llm.booking_data.confirmation_status == "confirmed":
+            print("\n📡 Sending booking to DropTruck API...")
+            api_client = DropTruckAPIClient()
+            success = api_client.send_booking(booking_data.to_dict())
+            if success:
+                self.logger.log_info("Booking data sent to API successfully")
+            else:
+                self.logger.log_warning("Failed to send booking data to API")
+        else:
+            print(f"\n⚠️  Booking not confirmed (status: {self.llm.booking_data.confirmation_status}), skipping API submission")
         
         self.logger.log_info("Shutdown complete")
         print("\n✅ Shutdown complete")

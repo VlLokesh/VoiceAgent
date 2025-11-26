@@ -14,7 +14,7 @@ from pydub import AudioSegment
 class ConversationRecorder:
     """Records complete conversation audio including user and assistant."""
     
-    def __init__(self, session_id: str, output_dir: str = "audio_output"):
+    def __init__(self, session_id: str, output_dir: str = "storage/audio_output"):
         """
         Initialize conversation recorder.
         

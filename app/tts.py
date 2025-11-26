@@ -12,7 +12,7 @@ from deepgram import DeepgramClient
 class TextToSpeech:
     """Manages text-to-speech synthesis using Deepgram."""
     
-    def __init__(self, api_key: str = None, output_dir: str = "audio_output", model: str = "aura-asteria-en", save_individual_files: bool = False):
+    def __init__(self, api_key: str = None, output_dir: str = "audio_output", model: str = "aura-asteria-en"):
         """
         Initialize TTS with Deepgram API key.
         
@@ -20,7 +20,6 @@ class TextToSpeech:
             api_key: Deepgram API key (reads from env if not provided)
             output_dir: Directory to save audio files
             model: Deepgram TTS model to use
-            save_individual_files: Whether to save individual audio files (default: False, stores in memory)
         """
         self.api_key = api_key or os.getenv("DEEPGRAM_API_KEY")
         if not self.api_key:
@@ -31,13 +30,10 @@ class TextToSpeech:
         self.client = DeepgramClient(api_key=self.api_key)
         self.model = model
         self.output_dir = output_dir
-        self.save_individual_files = save_individual_files
-        self.audio_responses = []  # Store audio data in memory
-
-        # Create output directory if needed
-        if save_individual_files:
-            os.makedirs(self.output_dir, exist_ok=True)
-
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(self.output_dir, exist_ok=True)
+    
     def synthesize(self, text: str, play: bool = True) -> str:
         """
         Synthesize text to speech and optionally play it.
@@ -47,11 +43,16 @@ class TextToSpeech:
             play: Whether to play the audio after synthesis
             
         Returns:
-            Path to the generated audio file (if saved), or empty string if stored in memory
+            Path to the generated audio file
         """
         if not text or not text.strip():
             print("⚠️  No text to synthesize")
             return ""
+        
+        # Generate unique filename
+        timestamp = int(time.time() * 1000)
+        filename = f"assistant_reply_{timestamp}.mp3"
+        filepath = os.path.join(self.output_dir, filename)
         
         try:
             print("🔊 Synthesizing speech...")
@@ -62,48 +63,19 @@ class TextToSpeech:
                 model=self.model,
             )
             
-            # Collect audio data
-            audio_data = b""
-            for chunk in speak_stream:
-                audio_data += chunk
-
-            if self.save_individual_files:
-                # Save to file
-                timestamp = int(time.time() * 1000)
-                filename = f"assistant_reply_{timestamp}.mp3"
-                filepath = os.path.join(self.output_dir, filename)
-
-                with open(filepath, "wb") as f:
-                    f.write(audio_data)
-
-                print(f"✅ Audio saved to: {filepath}")
-
-                # Play audio if requested
-                if play:
-                    self._play_audio(filepath)
-
-                return filepath
-            else:
-                # Store in memory
-                self.audio_responses.append(audio_data)
-                print(f"✅ Audio synthesized (stored in memory)")
-
-                # Play from memory if requested
-                if play:
-                    # Save to temporary file for playback
-                    import tempfile
-                    with tempfile.NamedTemporaryFile(mode='wb', suffix='.mp3', delete=False) as tmp_file:
-                        tmp_file.write(audio_data)
-                        tmp_path = tmp_file.name
-                    self._play_audio(tmp_path)
-                    # Clean up temp file after playback
-                    try:
-                        os.remove(tmp_path)
-                    except:
-                        pass
-
-                return ""
-
+            # Write audio to file
+            with open(filepath, "wb") as f:
+                for chunk in speak_stream:
+                    f.write(chunk)
+            
+            print(f"✅ Audio saved to: {filepath}")
+            
+            # Play audio if requested
+            if play:
+                self._play_audio(filepath)
+            
+            return filepath
+            
         except Exception as e:
             print(f"❌ TTS synthesis failed: {e}")
             import traceback

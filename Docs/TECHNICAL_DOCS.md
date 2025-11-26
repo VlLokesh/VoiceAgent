@@ -367,33 +367,33 @@ def shutdown(self):
 class WorkflowLogger:
     def __init__(self):
         self.session_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        
+
         # Session-specific logs
         self.text_log_path = f"logs/session_{self.session_id}.log"
         self.json_log_path = f"logs/session_{self.session_id}.json"
-        
+
         # Unified logs
-        self.runtime_log_path = "logs/runtime.log"
-        self.sessions_log_path = "logs/sessions.log"
-    
+        self.runtime_log_path = "../storage/logs/runtime.log"
+        self.sessions_log_path = "../storage/logs/sessions.log"
+
     def log_conversation_turn(self, user_input, assistant_response):
         # Log to session file
         with open(self.text_log_path, 'a') as f:
             f.write(f"[{timestamp}] USER: {user_input}\n")
             f.write(f"[{timestamp}] ASSISTANT: {assistant_response}\n")
-        
+
         # Log to unified sessions.log
         with open(self.sessions_log_path, 'a') as f:
             f.write(f"[{timestamp}] [Session: {self.session_id}] USER: {user_input}\n")
             f.write(f"[{timestamp}] [Session: {self.session_id}] ASSISTANT: {assistant_response}\n")
-        
+
         # Add to JSON data
         self.json_data["conversation"].append({
             "timestamp": timestamp.isoformat(),
             "user": user_input,
             "assistant": assistant_response
         })
-    
+
     def log_info(self, message):
         # Runtime logging with session ID
         log_entry = f"{datetime.now()} [INFO] [Session: {self.session_id}] {message}\n"

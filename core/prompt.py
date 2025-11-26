@@ -33,23 +33,22 @@ CALL FLOW:
 
 
 class BookingData:
-    """Stores and manages booking information collected during the conversation."""
+    """Stores booking information extracted from conversation."""
     
     def __init__(self):
-        # Customer information
-        self.customer_name = None
-        self.lead_source = None
-        self.enquiry_details = None
+        """Initialize booking data with fixed customer details."""
+        # Fixed customer details
+        self.customer_name = "Lokesh"
+        self.contact = "9066542031"
         
-        # Required booking fields
+        # To be extracted from conversation
+        self.lead_source = None
         self.pickup_location = None
         self.drop_location = None
         self.vehicle_type = None
         self.body_type = None
         self.goods_type = None
         self.trip_date = None
-        
-        # Conversation status
         self.confirmation_status = "pending"  # pending, confirmed, not_interested
     
     def update_field(self, field: str, value: str):
@@ -76,30 +75,37 @@ class BookingData:
             self.trip_date
         ])
     
-    def to_dict(self):
-        """Convert booking data to dictionary format."""
+    def to_dict(self) -> dict:
+        """Convert booking data to dictionary."""
         return {
-            "Customer Name": self.customer_name,
-            "Lead Source": self.lead_source,
-            "Enquiry Details": self.enquiry_details,
-            "Pickup Location": self.pickup_location,
-            "Drop Location": self.drop_location,
-            "Vehicle Type": self.vehicle_type,
-            "Body Type": self.body_type,
-            "Goods/Material Type": self.goods_type,
-            "Trip Date": self.trip_date,
-            "Confirmation Status": self.confirmation_status
+            "customer_name": self.customer_name,
+            "contact": self.contact,
+            "lead_source": self.lead_source,
+            "pickup_location": self.pickup_location,
+            "drop_location": self.drop_location,
+            "vehicle_type": self.vehicle_type,
+            "body_type": self.body_type,
+            "goods_type": self.goods_type,
+            "trip_date": self.trip_date,
+            "confirmation_status": self.confirmation_status
         }
     
-    def __str__(self):
-        """String representation for printing after call."""
-        lines = [
-            "\n" + "="*60,
-            "DROPTRUCK BOOKING INFORMATION",
-            "="*60
-        ]
-        for key, value in self.to_dict().items():
-            status = value if value else "[NOT PROVIDED]"
-            lines.append(f"{key:.<30} {status}")
-        lines.append("="*60 + "\n")
-        return "\n".join(lines)
+    def __str__(self) -> str:
+        """Return formatted booking information."""
+        return f"""
+============================================================
+DROPTRUCK BOOKING INFORMATION
+============================================================
+Customer Name................. {self.customer_name or '[NOT PROVIDED]'}
+Contact Number................ {self.contact or '[NOT PROVIDED]'}
+Lead Source................... {self.lead_source or '[NOT PROVIDED]'}
+Enquiry Details............... {self.enquiry_details or '[NOT PROVIDED]'}
+Pickup Location............... {self.pickup_location or '[NOT PROVIDED]'}
+Drop Location................. {self.drop_location or '[NOT PROVIDED]'}
+Vehicle Type.................. {self.vehicle_type or '[NOT PROVIDED]'}
+Body Type..................... {self.body_type or '[NOT PROVIDED]'}
+Goods/Material Type........... {self.goods_type or '[NOT PROVIDED]'}
+Trip Date..................... {self.trip_date or '[NOT PROVIDED]'}
+Confirmation Status........... {self.confirmation_status}
+============================================================
+"""

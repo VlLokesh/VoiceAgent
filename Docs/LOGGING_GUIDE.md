@@ -202,7 +202,7 @@ For production use, consider setting up logrotate for `runtime.log` and `session
 Access log files from your code:
 
 ```python
-from logs.logger import WorkflowLogger
+from stroage.logs import WorkflowLogger
 
 logger = WorkflowLogger()
 

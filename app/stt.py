@@ -18,6 +18,8 @@ class SpeechToText:
         
         self.client = DeepgramClient(api_key=self.api_key)
         self.connection = None
+        self.conn_cm = None  # Connection context manager
+        self.listener_thread = None
         
         # Callback handlers
         self.on_transcript_callback = None
@@ -128,8 +130,17 @@ class SpeechToText:
     
     def stop(self):
         """Stop the STT connection and cleanup."""
-        if self.connection:
-            self.connection.finish()
-        if self.listener_thread:
-            self.listener_thread.join(timeout=2)
-        print("🛑 STT stopped")
+        try:
+            if self.connection:
+                # Close the connection properly
+                if hasattr(self.connection, 'close'):
+                    self.connection.close()
+            if self.conn_cm:
+                # Exit the context manager
+                self.conn_cm.__exit__(None, None, None)
+            if self.listener_thread:
+                self.listener_thread.join(timeout=2)
+            print("🛑 STT stopped")
+        except Exception as e:
+            print(f"⚠️  Error stopping STT: {e}")
+            # Continue anyway to allow shutdown to proceed

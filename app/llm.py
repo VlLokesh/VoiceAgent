@@ -4,10 +4,8 @@ Manages conversation with OpenAI API and extracts booking information.
 """
 
 import os
-import re
 import requests
-from typing import Dict, Optional, Tuple
-from prompt import SYSTEM_PROMPT, BookingData
+from core.prompt import SYSTEM_PROMPT, BookingData
 
 
 class LLMAgent:
@@ -183,8 +181,22 @@ class LLMAgent:
         """
         text_lower = text.lower()
         
-        # Simple keyword-based extraction (can be enhanced)
-        # The LLM will handle the actual conversation and confirmation
+        # Extract pickup and drop locations
+        # Pattern: "from X to Y" or "X to Y"
+        import re
+        
+        # Try to find "from X to Y" pattern
+        from_to_pattern = r'(?:from|pickup)\s+([a-zA-Z\s]+?)\s+(?:to|drop)\s+([a-zA-Z\s]+?)(?:\s|,|$|\.)'
+        match = re.search(from_to_pattern, text_lower)
+        if match:
+            if not self.booking_data.pickup_location:
+                self.booking_data.pickup_location = match.group(1).strip().title()
+                if self.logger:
+                    self.logger.log_booking_update("pickup_location", self.booking_data.pickup_location)
+            if not self.booking_data.drop_location:
+                self.booking_data.drop_location = match.group(2).strip().title()
+                if self.logger:
+                    self.logger.log_booking_update("drop_location", self.booking_data.drop_location)
         
         # Detect body type
         if "open" in text_lower and self.booking_data.body_type is None:
@@ -196,14 +208,37 @@ class LLMAgent:
             if self.logger:
                 self.logger.log_booking_update("body_type", "Container")
         
-        # Detect vehicle type mentions
-        if "truck" in text_lower and self.booking_data.vehicle_type is None:
+        # Detect vehicle type mentions (feet sizes)
+        feet_pattern = r'(\d+)\s*(?:feet|ft|foot)'
+        feet_match = re.search(feet_pattern, text_lower)
+        if feet_match and not self.booking_data.vehicle_type:
+            feet = feet_match.group(1)
+            self.booking_data.vehicle_type = f"{feet} Feet Truck"
+            if self.logger:
+                self.logger.log_booking_update("vehicle_type", self.booking_data.vehicle_type)
+        elif "truck" in text_lower and self.booking_data.vehicle_type is None:
             self.booking_data.vehicle_type = "Truck"
             if self.logger:
                 self.logger.log_booking_update("vehicle_type", "Truck")
         
-        # Note: More sophisticated extraction would use NER or LLM-based extraction
-        # For now, we rely on the LLM to guide the conversation and ask for clarifications
+        # Detect material/goods type
+        materials = ["steel", "cement", "fmcg", "machinery", "furniture", "electronics", "food", "grain", "coal"]
+        for material in materials:
+            if material in text_lower and not self.booking_data.goods_type:
+                self.booking_data.goods_type = material.title()
+                if self.logger:
+                    self.logger.log_booking_update("goods_type", self.booking_data.goods_type)
+                break
+        
+        # Detect trip date
+        if ("today" in text_lower or "now" in text_lower) and not self.booking_data.trip_date:
+            self.booking_data.trip_date = "Today"
+            if self.logger:
+                self.logger.log_booking_update("trip_date", "Today")
+        elif "tomorrow" in text_lower and not self.booking_data.trip_date:
+            self.booking_data.trip_date = "Tomorrow"
+            if self.logger:
+                self.logger.log_booking_update("trip_date", "Tomorrow")
     
     def _detect_confirmation(self, text: str):
         """
