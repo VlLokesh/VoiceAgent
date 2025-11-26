@@ -7,12 +7,12 @@ The Voice Agent now has a comprehensive logging system that separates session-sp
 ## Log Files Created
 
 ### Per-Session Logs
-- **`logs/session_YYYY-MM-DD_HH-MM-SS.log`** - Human-readable conversation transcript
-- **`logs/session_YYYY-MM-DD_HH-MM-SS.json`** - Structured JSON data
+- **`storage/logs/session_YYYY-MM-DD_HH-MM-SS.log`** - Human-readable conversation transcript
+- **`storage/logs/session_YYYY-MM-DD_HH-MM-SS.json`** - Structured JSON data
 
 ### Unified Logs
-- **`logs/runtime.log`** - All runtime events across all sessions
-- **`logs/sessions.log`** - All conversation activity across all sessions
+- **`storage/logs/runtime.log`** - All runtime events across all sessions
+- **`storage/logs/sessions.log`** - All conversation activity across all sessions
 
 ## Real-Time Log Monitoring
 
@@ -20,13 +20,13 @@ Monitor logs in real-time using `tail -f`:
 
 ```bash
 # Monitor all runtime events (initialization, errors, processing)
-tail -f logs/runtime.log
+tail -f storage/logs/runtime.log
 
 # Monitor all conversation activity
-tail -f logs/sessions.log
+tail -f storage/logs/sessions.log
 
 # Monitor both at once (split screen recommended)
-tail -f logs/runtime.log logs/sessions.log
+tail -f storage/logs/runtime.log storage/logs/sessions.log
 ```
 
 ## Log Format Examples
@@ -122,10 +122,10 @@ For real-time monitoring during development:
 python main.py
 
 # Terminal 2: Monitor runtime logs
-tail -f logs/runtime.log
+tail -f storage/logs/runtime.log
 
 # Terminal 3: Monitor sessions logs
-tail -f logs/sessions.log
+tail -f storage/logs/sessions.log
 ```
 
 ### Filtering Logs
@@ -134,16 +134,16 @@ Filter logs for specific events:
 
 ```bash
 # Show only errors
-grep ERROR logs/runtime.log
+grep ERROR storage/logs/runtime.log
 
 # Show only booking updates
-grep "BOOKING UPDATE" logs/sessions.log
+grep "BOOKING UPDATE" storage/logs/sessions.log
 
 # Show logs from a specific session
-grep "2025-11-25_12-30-45" logs/runtime.log
+grep "2025-11-25_12-30-45" storage/logs/runtime.log
 
 # Show only conversation turns
-grep -E "(USER:|ASSISTANT:)" logs/sessions.log
+grep -E "(USER:|ASSISTANT:)" storage/logs/sessions.log
 ```
 
 ### Log Analysis
@@ -152,13 +152,13 @@ Analyze session statistics:
 
 ```bash
 # Count total sessions
-grep "SESSION STARTED" logs/sessions.log | wc -l
+grep "SESSION STARTED" storage/logs/sessions.log | wc -l
 
 # Count booking updates
-grep "BOOKING UPDATE" logs/sessions.log | wc -l
+grep "BOOKING UPDATE" storage/logs/sessions.log | wc -l
 
 # Find sessions with errors
-grep -B 5 ERROR logs/runtime.log
+grep -B 5 ERROR storage/logs/runtime.log
 ```
 
 ## Log Management
@@ -167,15 +167,15 @@ grep -B 5 ERROR logs/runtime.log
 
 ```bash
 # Remove session logs older than 7 days
-find logs/session_*.log -mtime +7 -delete
-find logs/session_*.json -mtime +7 -delete
+find storage/logs/session_*.log -mtime +7 -delete
+find storage/logs/session_*.json -mtime +7 -delete
 ```
 
 ### Archive Logs
 
 ```bash
 # Create dated archive
-tar -czf logs_archive_$(date +%Y%m%d).tar.gz logs/session_*.log logs/session_*.json
+tar -czf logs_archive_$(date +%Y%m%d).tar.gz storage/logs/session_*.log storage/logs/session_*.json
 
 # Move archive to backup location
 mv logs_archive_*.tar.gz ~/backups/
@@ -187,7 +187,7 @@ For production use, consider setting up logrotate for `runtime.log` and `session
 
 ```bash
 # Example logrotate config (save as /etc/logrotate.d/voice_agent)
-/path/to/Voice_Agent/logs/runtime.log /path/to/Voice_Agent/logs/sessions.log {
+/path/to/Voice_Agent/storage/logs/runtime.log /path/to/Voice_Agent/storage/logs/sessions.log {
     daily
     rotate 30
     compress
@@ -202,9 +202,9 @@ For production use, consider setting up logrotate for `runtime.log` and `session
 Access log files from your code:
 
 ```python
-from stroage.logs import WorkflowLogger
+from core.logger import WorkflowLogger
 
-logger = WorkflowLogger()
+logger = WorkflowLogger(logs_dir="storage/logs")
 
 # Get log paths
 session_log = logger.get_log_path()
@@ -222,17 +222,17 @@ logger.log_error("Custom error message")
 
 ### Logs Not Being Created
 
-Check that the `logs/` directory exists and is writable:
+Check that the `storage/logs/` directory exists and is writable:
 ```bash
-ls -la logs/
-chmod 755 logs/
+ls -la storage/logs/
+chmod 755 storage/logs/
 ```
 
 ### Permission Denied Errors
 
 Ensure the application has write permissions:
 ```bash
-chmod -R 755 logs/
+chmod -R 755 storage/logs/
 ```
 
 ### Logs Too Large
@@ -252,6 +252,6 @@ Implement log rotation or cleanup scripts as shown above.
 
 1. Run `python test_logging.py` to verify the setup
 2. Start the voice agent: `python main.py`
-3. In another terminal, run: `tail -f logs/runtime.log`
+3. In another terminal, run: `tail -f storage/logs/runtime.log`
 4. Have a conversation and watch the logs update in real-time!
 

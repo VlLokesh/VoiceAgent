@@ -99,7 +99,6 @@ DROPTRUCK BOOKING INFORMATION
 Customer Name................. {self.customer_name or '[NOT PROVIDED]'}
 Contact Number................ {self.contact or '[NOT PROVIDED]'}
 Lead Source................... {self.lead_source or '[NOT PROVIDED]'}
-Enquiry Details............... {self.enquiry_details or '[NOT PROVIDED]'}
 Pickup Location............... {self.pickup_location or '[NOT PROVIDED]'}
 Drop Location................. {self.drop_location or '[NOT PROVIDED]'}
 Vehicle Type.................. {self.vehicle_type or '[NOT PROVIDED]'}

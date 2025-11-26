@@ -131,7 +131,7 @@ The Voice Agent features a comprehensive logging system that tracks both individ
 
 ### Log Files
 
-The agent creates the following log files in the `logs/` directory:
+The agent creates the following log files in the `storage/logs/` directory:
 
 1. **Session-Specific Logs** (per conversation):
    - `session_YYYY-MM-DD_HH-MM-SS.log` - Human-readable conversation transcript
@@ -178,13 +178,13 @@ You can monitor logs in real-time using the `tail -f` command:
 
 ```bash
 # Monitor all runtime events
-tail -f logs/runtime.log
+tail -f storage/logs/runtime.log
 
 # Monitor all conversation activity
-tail -f logs/sessions.log
+tail -f storage/logs/sessions.log
 
 # Monitor a specific session (replace with actual session ID)
-tail -f logs/session_2025-11-25_12-30-45.log
+tail -f storage/logs/session_2025-11-25_12-30-45.log
 ```
 
 ### Example Log Output
@@ -211,7 +211,9 @@ tail -f logs/session_2025-11-25_12-30-45.log
 The `WorkflowLogger` class provides methods to access log file paths:
 
 ```python
-logger = WorkflowLogger()
+from core.logger import WorkflowLogger
+
+logger = WorkflowLogger(logs_dir="storage/logs")
 
 # Get session-specific log paths
 text_log = logger.get_log_path()
@@ -228,11 +230,11 @@ Session logs are automatically created for each conversation. To manage disk spa
 
 ```bash
 # Keep only logs from the last 7 days
-find logs/session_*.log -mtime +7 -delete
-find logs/session_*.json -mtime +7 -delete
+find storage/logs/session_*.log -mtime +7 -delete
+find storage/logs/session_*.json -mtime +7 -delete
 
 # Archive old logs
-tar -czf logs_archive_$(date +%Y%m%d).tar.gz logs/session_*.log logs/session_*.json
+tar -czf logs_archive_$(date +%Y%m%d).tar.gz storage/logs/session_*.log storage/logs/session_*.json
 ```
 
 For the unified logs (`runtime.log` and `sessions.log`), consider using `logrotate` or similar tools:
@@ -321,24 +323,24 @@ Voice_Agent/
 │   ├── stt.py          # Speech-to-Text module
 │   ├── tts.py          # Text-to-Speech module
 │   └── llm.py          # LLM integration
-├── logs/
+├── core/
 │   ├── logger.py       # Logging module
-│   ├── runtime.log     # Unified runtime log (auto-created)
-│   ├── sessions.log    # Unified sessions log (auto-created)
-│   ├── session_*.log   # Individual session logs (auto-created)
-│   └── session_*.json  # Individual session JSON logs (auto-created)
-├── prompt.py            # Prompts and data structures
+│   ├── audio_recorder.py # Audio recording
+│   ├── api_client.py   # API client
+│   └── prompt.py       # Prompts and data structures
+├── storage/
+│   ├── logs/           # Log files (runtime.log, sessions.log, etc.)
+│   └── audio_output/   # Generated audio files
 ├── requirements.txt     # Python dependencies
 ├── .env.example         # Environment template
-├── .env                 # Your API keys (gitignored)
-└── audio_output/        # Generated audio files (auto-created)
+└── .env                 # Your API keys (gitignored)
 ```
 
 ### Extending the Agent
 
 To add more booking fields:
 
-1. Update `REQUIRED_FIELDS` in `prompt.py`
+1. Update `REQUIRED_FIELDS` in `core/prompt.py`
 2. Add fields to `BookingData` class
 3. Update `SYSTEM_PROMPT` to include new fields
 4. The agent will automatically collect the new information
