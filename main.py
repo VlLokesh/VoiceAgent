@@ -155,6 +155,25 @@ class VoiceAgent:
                 samplerate=16000,
                 dtype='int16'
             ):
+                # Wait 1 second for audio stream to stabilize
+                time.sleep(1)
+                
+                # Trigger initial greeting from AI
+                print("🤖 AI Agent starting conversation...\n")
+                initial_greeting = "Hello, this is DropTruck AI sales agent calling about your enquiry. How can I assist you today?"
+                print(f"💬 Assistant: {initial_greeting}")
+                
+                # Synthesize and play greeting
+                audio_path = self.tts.synthesize(initial_greeting, play=True)
+                if audio_path:
+                    self.audio_recorder.add_assistant_response(audio_path)
+                
+                # Log the greeting
+                self.logger.log_conversation_turn("", initial_greeting)
+                self.logger.log_info("Initial greeting delivered")
+                print("🎵 Greeting complete - waiting for customer response...\n")
+                
+                # Main conversation loop
                 while True:
                     # Check if call is complete
                     if self.call_complete:
