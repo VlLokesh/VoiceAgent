@@ -51,13 +51,13 @@ class SpeechToText:
             "encoding": "linear16",
             "sample_rate": 16000,
             "keywords": keywords,  # Boost recognition of these terms
-            "endpointing": 400,  # Wait 500ms of silence before finalizing (default is 10ms)
+            "endpointing": 900,  # Wait 1 second of silence before finalizing
             "interim_results": True  # Get partial results while speaking
         }
         
         print(f"[STT] Connecting with params: {params}")
         print(f"[STT] Boosting {len(keywords)} keywords for better city/truck recognition")
-        print(f"[STT] Endpointing: 500ms (waits longer before cutting off)")
+        print(f"[STT] Endpointing: 1000ms (waits 1 second before cutting off)")
         try:
             conn = self.client.listen.v1.connect(**params)
             connection = conn.__enter__()

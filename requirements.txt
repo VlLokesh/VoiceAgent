@@ -11,4 +11,4 @@ sounddevice>=0.4.6
 numpy>=1.24.0
 pydub>=0.25.1
 fuzzywuzzy 
-Levenshtei
+levenshtein

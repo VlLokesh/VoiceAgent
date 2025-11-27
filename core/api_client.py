@@ -51,7 +51,7 @@ class DropTruckAPIClient:
             )
             
             # Check response
-            if response.status_code == 200:
+            if response.status_code in [200, 201]:  # Accept both 200 OK and 201 Created
                 print(f"✅ Booking sent successfully!")
                 print(f"📥 Response: {response.json()}")
                 return True

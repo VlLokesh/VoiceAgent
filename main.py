@@ -67,15 +67,60 @@ class VoiceAgent:
         print("✅ DropTruck AI Sales Agent initialized")
         print(f"📼 Recording conversation to: audio_output/session_{self.logger.session_id}/")
     
-    def on_transcript(self, text: str):
-        """Handle partial transcript from STT."""
-        print(f"You: {text}")
-        self.current_transcript.append(text)
-    
-    def on_final(self, text: str):
-        """Handle final transcript segment from STT."""
+    def on_final_transcript(self, transcript: str):
+        """
+        Handle final transcription from STT.
+        Filters out noise, duplicates, and partial words.
+        """
+        if not transcript or not transcript.strip():
+            return
+        
+        # Clean up transcript
+        transcript = transcript.strip()
+        
+        # Filter out very short transcripts (likely noise)
+        if len(transcript) < 3:
+            print(f"⚠️  Filtered out noise: '{transcript}'")
+            return
+        
+        # Filter out single-word duplicates
+        if len(transcript.split()) == 1:
+            # Check if this word was just said
+            if self.current_transcript and transcript.lower() in ' '.join(self.current_transcript).lower():
+                print(f"⚠️  Filtered duplicate: '{transcript}'")
+                return
+        
+        # Add to current transcript buffer
+        self.current_transcript.append(transcript)
+        print(f"You: {transcript}")
+        
+        # Mark segment as ready for processing
         self.segment_ready = True
     
+    def get_complete_transcript(self) -> str:
+        """
+        Get the complete transcript, removing duplicates and cleaning up.
+        """
+        if not self.current_transcript:
+            return ""
+        
+        # Join all parts
+        full_text = " ".join(self.current_transcript)
+        
+        # Remove consecutive duplicate words
+        words = full_text.split()
+        cleaned_words = []
+        prev_word = None
+        
+        for word in words:
+            # Skip if same as previous word (case-insensitive)
+            if prev_word and word.lower() == prev_word.lower():
+                continue
+            cleaned_words.append(word)
+            prev_word = word
+        
+        return " ".join(cleaned_words)
+
     def on_error(self, error):
         """Handle STT errors."""
         error_msg = f"STT Error: {error}"
@@ -121,8 +166,8 @@ class VoiceAgent:
             # Start STT
             self.logger.log_info("Starting Speech-to-Text stream")
             self.stt.start(
-                on_transcript=self.on_transcript,
-                on_final=self.on_final,
+                on_transcript=lambda text: None,  # Ignore partial transcripts
+                on_final=self.on_final_transcript,  # Use our filtered method
                 on_error=self.on_error
             )
             
@@ -186,16 +231,17 @@ class VoiceAgent:
                         print("\n📞 Call ending gracefully...")
                         break
                     
-                    # Check if we have a complete segment to process
-                    if self.segment_ready:
-                        self.segment_ready = False
-                        
-                        # Consolidate transcript
-                        user_text = " ".join(self.current_transcript).strip()
-                        self.current_transcript.clear()
+                    # Process accumulated transcript
+                    if self.segment_ready and self.current_transcript:
+                        # Get cleaned transcript (removes duplicates)
+                        user_text = self.get_complete_transcript()
                         
                         if user_text:
                             self.process_user_input(user_text)
+                        
+                        # Reset for next segment
+                        self.current_transcript = []
+                        self.segment_ready = False
                     
                     # Small sleep to prevent busy waiting
                     time.sleep(0.1)

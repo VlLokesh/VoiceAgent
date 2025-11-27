@@ -76,6 +76,9 @@ class LLMAgent:
         try:
             response_text = self._call_openai(recent_messages)
             
+            # Extract from LLM response too (captures locations from confirmations)
+            self._extract_booking_info(response_text)
+            
             # Check if response contains BOOKING_CONFIRMED marker
             if self.check_booking_confirmed_marker(response_text):
                 self.booking_data.confirmation_status = "confirmed"
@@ -202,17 +205,49 @@ class LLMAgent:
         import re
         
         # Try to find "from X to Y" pattern (more flexible)
+        # Allow updates if user provides clearer information
         from_to_pattern = r'(?:from|pickup|trip from)\s+([a-zA-Z\s]+?)\s+(?:to|drop)\s+([a-zA-Z\s]+?)(?:\s|,|$|\.|\band\b)'
         match = re.search(from_to_pattern, text_lower)
         if match:
-            if not self.booking_data.pickup_location:
-                self.booking_data.pickup_location = match.group(1).strip().title()
+            pickup = match.group(1).strip().title()
+            drop = match.group(2).strip().title()
+            
+            # Update if field is empty OR if new value is longer/clearer (likely a correction)
+            if not self.booking_data.pickup_location or len(pickup) > len(self.booking_data.pickup_location or ""):
+                self.booking_data.pickup_location = pickup
                 if self.logger:
-                    self.logger.log_booking_update("pickup_location", self.booking_data.pickup_location)
-            if not self.booking_data.drop_location:
-                self.booking_data.drop_location = match.group(2).strip().title()
+                    self.logger.log_booking_update("pickup_location", pickup)
+            
+            if not self.booking_data.drop_location or len(drop) > len(self.booking_data.drop_location or ""):
+                self.booking_data.drop_location = drop
                 if self.logger:
-                    self.logger.log_booking_update("drop_location", self.booking_data.drop_location)
+                    self.logger.log_booking_update("drop_location", drop)
+        
+        # Also try confirmation format: "Pickup X, drop Y" or "Pickup in X, drop in Y"
+        # Updated regex to handle "in" optionally and capture the city name
+        confirmation_pattern = r'pickup\s+(?:in\s+)?([a-zA-Z\s]+?),\s*drop\s+(?:in\s+)?([a-zA-Z\s]+?)(?:,|truck|\s+truck|\.|$)'
+        conf_match = re.search(confirmation_pattern, text_lower)
+        if conf_match:
+            pickup = conf_match.group(1).strip().title()
+            drop = conf_match.group(2).strip().title()
+            
+            # Clean up common prefixes/suffixes (case-insensitive)
+            for prefix in ['in ', 'from ', 'at ']:
+                if pickup.lower().startswith(prefix):
+                    pickup = pickup[len(prefix):].title()
+                if drop.lower().startswith(prefix):
+                    drop = drop[len(prefix):].title()
+            
+            # Always update from confirmation (it's the AI's understanding)
+            if pickup and len(pickup) > 2:
+                self.booking_data.pickup_location = pickup
+                if self.logger:
+                    self.logger.log_booking_update("pickup_location", pickup)
+            
+            if drop and len(drop) > 2:
+                self.booking_data.drop_location = drop
+                if self.logger:
+                    self.logger.log_booking_update("drop_location", drop)
         
         # Detect body type
         if "open" in text_lower and self.booking_data.body_type is None:
@@ -226,65 +261,66 @@ class LLMAgent:
         
         # Detect vehicle type mentions with fuzzy matching
         # This handles mispronunciations and different accents
+        
+        # List of all vehicle types to match against
+        vehicle_keywords = {
+            # Basic trucks
+            "tata ace": "Tata Ace",
+            "tata ac": "Tata Ace",
+            "ace": "Tata Ace",
+            "dost": "Dost",
+            "bada dost": "Bada Dost",
+            "bolero": "Bolero",
+            "bolero pickup": "Bolero",
+            "407": "407",
+            "eicher": "Eicher",
+            "ashok leyland": "Ashok Leyland",
+            
+            # Feet-based trucks
+            "12 feet": "12 Feet",
+            "14 feet": "14 Feet",
+            "17 feet": "17 Feet",
+            "19 feet": "19 Feet",
+            "20 feet": "20 Feet",
+            "22 feet": "22 Feet",
+            "24 feet": "24 Feet",
+            "32 feet": "32 Feet Multi-Axle",
+            "32 feet multi-axle": "32 Feet Multi-Axle",
+            "32 feet multi axle": "32 Feet Multi-Axle",
+            
+            # Trailers
+            "trailer": "Trailer",
+            "20 feet trailer": "20 Feet Trailer",
+            "24 feet trailer": "24 Feet Trailer",
+            "40 feet trailer": "40 Feet Trailer",
+            "low-bed": "Low-Bed Trailer",
+            "low bed": "Low-Bed Trailer",
+            "semi-bed": "Semi-Bed Trailer",
+            "semi bed": "Semi-Bed Trailer",
+            "high-bed": "High-Bed Trailer",
+            "high bed": "High-Bed Trailer",
+            
+            # Wheel configurations
+            "6-wheel": "6-Wheel Truck",
+            "6 wheel": "6-Wheel Truck",
+            "10-wheel": "10-Wheel Truck",
+            "10 wheel": "10-Wheel Truck",
+            "12-wheel": "12-Wheel Truck",
+            "12 wheel": "12-Wheel Truck",
+            "14-wheel": "14-Wheel Truck",
+            "14 wheel": "14-Wheel Truck",
+            "16-wheel": "16-Wheel Truck",
+            "16 wheel": "16-Wheel Truck",
+            
+            # Special types
+            "car-carrier": "Car-Carrier",
+            "car carrier": "Car-Carrier",
+            "part-load": "Part-Load",
+            "part load": "Part-Load",
+        }
+
         if not self.booking_data.vehicle_type:
             from fuzzywuzzy import fuzz
-            
-            # List of all vehicle types to match against
-            vehicle_keywords = {
-                # Basic trucks
-                "tata ace": "Tata Ace",
-                "tata ac": "Tata Ace",
-                "ace": "Tata Ace",
-                "dost": "Dost",
-                "bada dost": "Bada Dost",
-                "bolero": "Bolero",
-                "bolero pickup": "Bolero",
-                "407": "407",
-                "eicher": "Eicher",
-                "ashok leyland": "Ashok Leyland",
-                
-                # Feet-based trucks
-                "12 feet": "12 Feet",
-                "14 feet": "14 Feet",
-                "17 feet": "17 Feet",
-                "19 feet": "19 Feet",
-                "20 feet": "20 Feet",
-                "22 feet": "22 Feet",
-                "24 feet": "24 Feet",
-                "32 feet": "32 Feet Multi-Axle",
-                "32 feet multi-axle": "32 Feet Multi-Axle",
-                "32 feet multi axle": "32 Feet Multi-Axle",
-                
-                # Trailers
-                "trailer": "Trailer",
-                "20 feet trailer": "20 Feet Trailer",
-                "24 feet trailer": "24 Feet Trailer",
-                "40 feet trailer": "40 Feet Trailer",
-                "low-bed": "Low-Bed Trailer",
-                "low bed": "Low-Bed Trailer",
-                "semi-bed": "Semi-Bed Trailer",
-                "semi bed": "Semi-Bed Trailer",
-                "high-bed": "High-Bed Trailer",
-                "high bed": "High-Bed Trailer",
-                
-                # Wheel configurations
-                "6-wheel": "6-Wheel Truck",
-                "6 wheel": "6-Wheel Truck",
-                "10-wheel": "10-Wheel Truck",
-                "10 wheel": "10-Wheel Truck",
-                "12-wheel": "12-Wheel Truck",
-                "12 wheel": "12-Wheel Truck",
-                "14-wheel": "14-Wheel Truck",
-                "14 wheel": "14-Wheel Truck",
-                "16-wheel": "16-Wheel Truck",
-                "16 wheel": "16-Wheel Truck",
-                
-                # Special types
-                "car-carrier": "Car-Carrier",
-                "car carrier": "Car-Carrier",
-                "part-load": "Part-Load",
-                "part load": "Part-Load",
-            }
             
             # Try fuzzy matching for each word/phrase in user text
             best_match = None
@@ -303,17 +339,41 @@ class LLMAgent:
                         score = fuzz.partial_ratio(phrase, keyword)
                         
                         # If score is high enough and better than previous matches
-                        if score > best_score and score >= 75:  # 75% similarity threshold
+                        if score > best_score and score >= 85:  # Increased to 85% for better accuracy
                             best_score = score
                             best_match = keyword
                             best_vehicle = vehicle_name
             
-            # If we found a good match, use it
-            if best_vehicle:
+            # If we found a good match, use it (allow updates if confidence is higher)
+            if best_vehicle and best_score >= 85:
                 self.booking_data.vehicle_type = best_vehicle
                 if self.logger:
                     self.logger.log_booking_update("vehicle_type", best_vehicle)
                     self.logger.log_info(f"Fuzzy matched '{best_match}' with {best_score}% confidence")
+        
+        # Also try to extract from confirmation: "truck type X"
+        # Updated regex to be more robust
+        truck_type_pattern = r'truck\s+(?:type\s+)?([a-zA-Z0-9\s]+?)(?:,|body|\s+open|\s+container|\.|$)'
+        truck_match = re.search(truck_type_pattern, text_lower)
+        if truck_match:
+            truck_mentioned = truck_match.group(1).strip()
+            # Try fuzzy match on this
+            from fuzzywuzzy import fuzz
+            best_score = 0
+            best_vehicle = None
+            
+            for keyword, vehicle_name in vehicle_keywords.items():
+                # Use ratio for short strings, partial_ratio for longer
+                score = fuzz.ratio(truck_mentioned.lower(), keyword)
+                if score > best_score and score >= 65:  # Lower threshold for explicit confirmation mentions
+                    best_score = score
+                    best_vehicle = vehicle_name
+            
+            if best_vehicle:
+                self.booking_data.vehicle_type = best_vehicle
+                if self.logger:
+                    self.logger.log_booking_update("vehicle_type", best_vehicle)
+                    self.logger.log_info(f"Extracted from confirmation: '{truck_mentioned}' → {best_vehicle}")
         
         # Fallback: Check for feet sizes using regex
         if not self.booking_data.vehicle_type:
