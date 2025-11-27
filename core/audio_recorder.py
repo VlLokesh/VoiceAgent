@@ -103,6 +103,7 @@ class ConversationRecorder:
         Automatically cleans up intermediate files after merging.
         """
         print("🎬 Merging conversation audio...")
+        print(f"   Assistant responses to merge: {len(self.assistant_responses)}")
         
         # Load user audio
         if not os.path.exists(self.user_audio_path):
@@ -116,13 +117,20 @@ class ConversationRecorder:
             # Add user audio
             user_audio = AudioSegment.from_wav(self.user_audio_path)
             conversation += user_audio
+            print(f"   ✓ Added user audio ({len(user_audio)/1000:.1f}s)")
             
             # Add each assistant response with silence padding
             for i, response_path in enumerate(self.assistant_responses):
+                print(f"   Checking: {response_path}")
                 if os.path.exists(response_path):
+                    file_size = os.path.getsize(response_path)
+                    print(f"   ✓ File exists ({file_size} bytes)")
                     conversation += AudioSegment.silent(duration=300)  # 300ms pause
                     assistant_audio = AudioSegment.from_mp3(response_path)
                     conversation += assistant_audio
+                    print(f"   ✓ Merged assistant response {i+1}/{len(self.assistant_responses)} ({len(assistant_audio)/1000:.1f}s)")
+                else:
+                    print(f"   ✗ File NOT FOUND: {response_path}")
             
             # Add final silence
             conversation += AudioSegment.silent(duration=500)
@@ -135,6 +143,8 @@ class ConversationRecorder:
             )
             
             print(f"✅ Full conversation saved: {self.conversation_path}")
+            print(f"   Total duration: {len(conversation)/1000:.1f} seconds")
+            print(f"   User audio + {len(self.assistant_responses)} AI responses merged")
             
             # Clean up intermediate files
             self._cleanup_intermediate_files()
@@ -143,6 +153,8 @@ class ConversationRecorder:
             
         except Exception as e:
             print(f"❌ Error merging conversation: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _cleanup_intermediate_files(self):

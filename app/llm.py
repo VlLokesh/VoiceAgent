@@ -76,6 +76,13 @@ class LLMAgent:
         try:
             response_text = self._call_openai(recent_messages)
             
+            # Check if response contains BOOKING_CONFIRMED marker
+            if self.check_booking_confirmed_marker(response_text):
+                self.booking_data.confirmation_status = "confirmed"
+                if self.logger:
+                    self.logger.log_confirmation_status("confirmed")
+                    self.logger.log_info("BOOKING_CONFIRMED marker detected in LLM response")
+            
             # Add assistant response to history
             self.conversation_history.append({
                 "role": "assistant",
@@ -98,28 +105,37 @@ class LLMAgent:
     def is_call_complete(self) -> bool:
         """
         Check if the call should be ended based on assistant's last response.
-        Returns True if closing phrases are detected.
+        Returns True if the assistant has said goodbye or confirmed booking.
         """
         if not self.conversation_history:
             return False
         
-        # Get last assistant message
-        last_messages = [msg for msg in self.conversation_history if msg["role"] == "assistant"]
-        if not last_messages:
+        # Get the last assistant message
+        last_message = None
+        for msg in reversed(self.conversation_history):
+            if msg["role"] == "assistant":
+                last_message = msg["content"].lower()
+                break
+        
+        if not last_message:
             return False
         
-        last_response = last_messages[-1]["content"].lower()
+        # Check for BOOKING_CONFIRMED marker (highest priority)
+        if "booking_confirmed" in last_message:
+            return True
         
-        # Closing phrases that indicate call completion
+        # Check for closing phrases
         closing_phrases = [
             "have a great day",
+            "have a good day", 
             "thank you for your time",
+            "goodbye",
+            "bye",
             "our sales person will contact you soon",
             "you can contact droptruck anytime"
         ]
         
-        # Check if any closing phrase is in the last response
-        return any(phrase in last_response for phrase in closing_phrases)
+        return any(phrase in last_message for phrase in closing_phrases)
     
     def _call_openai(self, messages: list) -> str:
         """
@@ -139,7 +155,7 @@ class LLMAgent:
         payload = {
             "model": self.model,
             "messages": messages,
-            "temperature": 0.7,
+            "temperature": 0.6,
             "max_tokens": 256
         }
         
@@ -182,11 +198,11 @@ class LLMAgent:
         text_lower = text.lower()
         
         # Extract pickup and drop locations
-        # Pattern: "from X to Y" or "X to Y"
+        # Pattern: "from X to Y" or "X to Y" or "trip from X to Y"
         import re
         
-        # Try to find "from X to Y" pattern
-        from_to_pattern = r'(?:from|pickup)\s+([a-zA-Z\s]+?)\s+(?:to|drop)\s+([a-zA-Z\s]+?)(?:\s|,|$|\.)'
+        # Try to find "from X to Y" pattern (more flexible)
+        from_to_pattern = r'(?:from|pickup|trip from)\s+([a-zA-Z\s]+?)\s+(?:to|drop)\s+([a-zA-Z\s]+?)(?:\s|,|$|\.|\band\b)'
         match = re.search(from_to_pattern, text_lower)
         if match:
             if not self.booking_data.pickup_location:
@@ -208,21 +224,117 @@ class LLMAgent:
             if self.logger:
                 self.logger.log_booking_update("body_type", "Container")
         
-        # Detect vehicle type mentions (feet sizes)
-        feet_pattern = r'(\d+)\s*(?:feet|ft|foot)'
-        feet_match = re.search(feet_pattern, text_lower)
-        if feet_match and not self.booking_data.vehicle_type:
-            feet = feet_match.group(1)
-            self.booking_data.vehicle_type = f"{feet} Feet Truck"
-            if self.logger:
-                self.logger.log_booking_update("vehicle_type", self.booking_data.vehicle_type)
-        elif "truck" in text_lower and self.booking_data.vehicle_type is None:
-            self.booking_data.vehicle_type = "Truck"
-            if self.logger:
-                self.logger.log_booking_update("vehicle_type", "Truck")
+        # Detect vehicle type mentions with fuzzy matching
+        # This handles mispronunciations and different accents
+        if not self.booking_data.vehicle_type:
+            from fuzzywuzzy import fuzz
+            
+            # List of all vehicle types to match against
+            vehicle_keywords = {
+                # Basic trucks
+                "tata ace": "Tata Ace",
+                "tata ac": "Tata Ace",
+                "ace": "Tata Ace",
+                "dost": "Dost",
+                "bada dost": "Bada Dost",
+                "bolero": "Bolero",
+                "bolero pickup": "Bolero",
+                "407": "407",
+                "eicher": "Eicher",
+                "ashok leyland": "Ashok Leyland",
+                
+                # Feet-based trucks
+                "12 feet": "12 Feet",
+                "14 feet": "14 Feet",
+                "17 feet": "17 Feet",
+                "19 feet": "19 Feet",
+                "20 feet": "20 Feet",
+                "22 feet": "22 Feet",
+                "24 feet": "24 Feet",
+                "32 feet": "32 Feet Multi-Axle",
+                "32 feet multi-axle": "32 Feet Multi-Axle",
+                "32 feet multi axle": "32 Feet Multi-Axle",
+                
+                # Trailers
+                "trailer": "Trailer",
+                "20 feet trailer": "20 Feet Trailer",
+                "24 feet trailer": "24 Feet Trailer",
+                "40 feet trailer": "40 Feet Trailer",
+                "low-bed": "Low-Bed Trailer",
+                "low bed": "Low-Bed Trailer",
+                "semi-bed": "Semi-Bed Trailer",
+                "semi bed": "Semi-Bed Trailer",
+                "high-bed": "High-Bed Trailer",
+                "high bed": "High-Bed Trailer",
+                
+                # Wheel configurations
+                "6-wheel": "6-Wheel Truck",
+                "6 wheel": "6-Wheel Truck",
+                "10-wheel": "10-Wheel Truck",
+                "10 wheel": "10-Wheel Truck",
+                "12-wheel": "12-Wheel Truck",
+                "12 wheel": "12-Wheel Truck",
+                "14-wheel": "14-Wheel Truck",
+                "14 wheel": "14-Wheel Truck",
+                "16-wheel": "16-Wheel Truck",
+                "16 wheel": "16-Wheel Truck",
+                
+                # Special types
+                "car-carrier": "Car-Carrier",
+                "car carrier": "Car-Carrier",
+                "part-load": "Part-Load",
+                "part load": "Part-Load",
+            }
+            
+            # Try fuzzy matching for each word/phrase in user text
+            best_match = None
+            best_score = 0
+            best_vehicle = None
+            
+            # Split text into words and create n-grams (1-4 words)
+            words = text_lower.split()
+            for i in range(len(words)):
+                for j in range(i + 1, min(i + 5, len(words) + 1)):  # Check up to 4-word phrases
+                    phrase = " ".join(words[i:j])
+                    
+                    # Check against all vehicle keywords
+                    for keyword, vehicle_name in vehicle_keywords.items():
+                        # Use partial ratio for better matching
+                        score = fuzz.partial_ratio(phrase, keyword)
+                        
+                        # If score is high enough and better than previous matches
+                        if score > best_score and score >= 75:  # 75% similarity threshold
+                            best_score = score
+                            best_match = keyword
+                            best_vehicle = vehicle_name
+            
+            # If we found a good match, use it
+            if best_vehicle:
+                self.booking_data.vehicle_type = best_vehicle
+                if self.logger:
+                    self.logger.log_booking_update("vehicle_type", best_vehicle)
+                    self.logger.log_info(f"Fuzzy matched '{best_match}' with {best_score}% confidence")
         
-        # Detect material/goods type
-        materials = ["steel", "cement", "fmcg", "machinery", "furniture", "electronics", "food", "grain", "coal"]
+        # Fallback: Check for feet sizes using regex
+        if not self.booking_data.vehicle_type:
+            feet_pattern = r'(\d+)\s*(?:feet|ft|foot)'
+            feet_match = re.search(feet_pattern, text_lower)
+            if feet_match:
+                feet = feet_match.group(1)
+                self.booking_data.vehicle_type = f"{feet} Feet"
+                if self.logger:
+                    self.logger.log_booking_update("vehicle_type", self.booking_data.vehicle_type)
+            elif "truck" in text_lower:
+                self.booking_data.vehicle_type = "Truck"
+                if self.logger:
+                    self.logger.log_booking_update("vehicle_type", "Truck")
+        
+        # Detect material/goods type (expanded list)
+        materials = [
+            "steel", "cement", "fmcg", "machinery", "furniture", "electronics", 
+            "food", "grain", "coal", "books", "paper", "textile", "clothes",
+            "plastic", "metal", "wood", "glass", "chemicals"
+        ]
         for material in materials:
             if material in text_lower and not self.booking_data.goods_type:
                 self.booking_data.goods_type = material.title()
@@ -230,15 +342,25 @@ class LLMAgent:
                     self.logger.log_booking_update("goods_type", self.booking_data.goods_type)
                 break
         
-        # Detect trip date
-        if ("today" in text_lower or "now" in text_lower) and not self.booking_data.trip_date:
-            self.booking_data.trip_date = "Today"
-            if self.logger:
-                self.logger.log_booking_update("trip_date", "Today")
-        elif "tomorrow" in text_lower and not self.booking_data.trip_date:
-            self.booking_data.trip_date = "Tomorrow"
-            if self.logger:
-                self.logger.log_booking_update("trip_date", "Tomorrow")
+        # Detect trip date and convert to YYYY-MM-DD format
+        from datetime import datetime, timedelta
+        
+        if not self.booking_data.trip_date:
+            if "today" in text_lower or "now" in text_lower:
+                date_obj = datetime.now()
+                self.booking_data.trip_date = date_obj.strftime("%Y-%m-%d")
+                if self.logger:
+                    self.logger.log_booking_update("trip_date", self.booking_data.trip_date)
+            elif "tomorrow" in text_lower:
+                date_obj = datetime.now() + timedelta(days=1)
+                self.booking_data.trip_date = date_obj.strftime("%Y-%m-%d")
+                if self.logger:
+                    self.logger.log_booking_update("trip_date", self.booking_data.trip_date)
+            elif "day after tomorrow" in text_lower or "overmorrow" in text_lower:
+                date_obj = datetime.now() + timedelta(days=2)
+                self.booking_data.trip_date = date_obj.strftime("%Y-%m-%d")
+                if self.logger:
+                    self.logger.log_booking_update("trip_date", self.booking_data.trip_date)
     
     def _detect_confirmation(self, text: str):
         """
@@ -249,20 +371,40 @@ class LLMAgent:
         """
         text_lower = text.lower()
         
+        # Expanded confirmation keywords
+        confirmation_keywords = [
+            "yes", "yeah", "yep", "ok", "okay", "correct", "right", "sure", 
+            "fine", "perfect", "that's right", "confirmed", "done", 
+            "absolutely", "exactly"
+        ]
+        
         # Detect confirmation
-        confirmation_keywords = ["yes", "correct", "right", "that's right", "confirmed", "okay", "ok"]
         if any(keyword in text_lower for keyword in confirmation_keywords):
-            if self.booking_data.is_complete() and self.booking_data.confirmation_status == "pending":
+            if self.booking_data.confirmation_status == "pending":
                 self.booking_data.confirmation_status = "confirmed"
                 if self.logger:
                     self.logger.log_confirmation_status("confirmed")
         
-        # Detect not interested
-        rejection_keywords = ["not interested", "no thanks", "don't need", "cancel"]
+        # Detect rejection
+        rejection_keywords = ["no", "not interested", "cancel", "don't want", "not now"]
         if any(keyword in text_lower for keyword in rejection_keywords):
-            self.booking_data.confirmation_status = "not_interested"
-            if self.logger:
-                self.logger.log_confirmation_status("not_interested")
+            if self.booking_data.confirmation_status == "pending":
+                self.booking_data.confirmation_status = "not_interested"
+                if self.logger:
+                    self.logger.log_confirmation_status("not_interested")
+    
+    def check_booking_confirmed_marker(self, response_text: str) -> bool:
+        """
+        Check if the LLM response contains the BOOKING_CONFIRMED marker.
+        This indicates the customer has confirmed and we should send to API.
+        
+        Args:
+            response_text: The LLM's response text
+            
+        Returns:
+            True if BOOKING_CONFIRMED marker is present
+        """
+        return "BOOKING_CONFIRMED" in response_text
     
     def get_booking_data(self) -> BookingData:
         """

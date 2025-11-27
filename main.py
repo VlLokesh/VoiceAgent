@@ -168,8 +168,14 @@ class VoiceAgent:
                 if audio_path:
                     self.audio_recorder.add_assistant_response(audio_path)
                 
+                # Add greeting to LLM conversation history (so it doesn't repeat)
+                # This tells the LLM it already said the greeting
+                self.llm.conversation_history.append({
+                    "role": "assistant",
+                    "content": initial_greeting
+                })
+                
                 # Log the greeting
-                self.logger.log_conversation_turn("", initial_greeting)
                 self.logger.log_info("Initial greeting delivered")
                 print("🎵 Greeting complete - waiting for customer response...\n")
                 

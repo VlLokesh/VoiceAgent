@@ -28,17 +28,40 @@ class SpeechToText:
     
     def _attempt_connection(self):
         """Connect to Deepgram with working parameters."""
+        # Keywords to boost recognition (Indian cities and truck terms)
+        keywords = [
+            # Major Indian cities
+            "Mumbai", "Delhi", "Bangalore", "Bengaluru", "Chennai", "Kolkata", 
+            "Hyderabad", "Pune", "Ahmedabad", "Surat", "Jaipur", "Lucknow",
+            "Kanpur", "Nagpur", "Indore", "Thane", "Bhopal", "Visakhapatnam",
+            "Pimpri", "Patna", "Vadodara", "Ghaziabad", "Ludhiana", "Agra",
+            "Nashik", "Faridabad", "Meerut", "Rajkot", "Kalyan", "Vasai",
+            "Varanasi", "Srinagar", "Aurangabad", "Dhanbad", "Amritsar",
+            "Navi Mumbai", "Allahabad", "Ranchi", "Howrah", "Coimbatore",
+            "Jabalpur", "Gwalior", "Vijayawada", "Jodhpur", "Madurai",
+            "Raipur", "Kota", "Guwahati", "Chandigarh", "Solapur",
+            # Truck types
+            "Tata", "Ace", "Dost", "Bolero", "Ashok", "Leyland", "Eicher",
+            # Common terms
+            "pickup", "drop", "container", "open", "truck", "vehicle"
+        ]
+        
         params = {
             "model": "nova-2",
             "encoding": "linear16",
-            "sample_rate": 16000
+            "sample_rate": 16000,
+            "keywords": keywords,  # Boost recognition of these terms
+            "endpointing": 400,  # Wait 500ms of silence before finalizing (default is 10ms)
+            "interim_results": True  # Get partial results while speaking
         }
         
         print(f"[STT] Connecting with params: {params}")
+        print(f"[STT] Boosting {len(keywords)} keywords for better city/truck recognition")
+        print(f"[STT] Endpointing: 500ms (waits longer before cutting off)")
         try:
             conn = self.client.listen.v1.connect(**params)
             connection = conn.__enter__()
-            print(f"✅ STT Connected with params: {params}")
+            print(f"✅ STT Connected with keyword boosting enabled")
             return conn, connection, params
         except Exception as e:
             print(f"❌ Failed to connect to Deepgram: {repr(e)}")
